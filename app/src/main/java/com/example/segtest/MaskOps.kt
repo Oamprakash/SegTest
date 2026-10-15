@@ -9,7 +9,29 @@ import kotlin.math.min
  */
 object MaskOps {
 
-    /** Bilinear resize of a row-major mask. */
+    /**
+     * Resize via a native ALPHA_8 bitmap scale (filtered). Much faster than [resize] at export sizes; mask
+     * precision drops to 8 bits, which is invisible in a cutout.
+     */
+    fun resizeNative(src: FloatArray, w: Int, h: Int, nw: Int, nh: Int): FloatArray {
+        if (w == nw && h == nh) return src.copyOf()
+        val small = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ALPHA_8)
+        val inStride = small.rowBytes
+        val inBytes = ByteArray(inStride * h)
+        for (y in 0 until h) for (x in 0 until w) {
+            inBytes[y * inStride + x] = (src[y * w + x].coerceIn(0f, 1f) * 255f + 0.5f).toInt().toByte()
+        }
+        small.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(inBytes))
+        val big = android.graphics.Bitmap.createScaledBitmap(small, nw, nh, true)
+        val outStride = big.rowBytes
+        val outBytes = ByteArray(outStride * nh)
+        big.copyPixelsToBuffer(java.nio.ByteBuffer.wrap(outBytes))
+        small.recycle()
+        big.recycle()
+        return FloatArray(nw * nh) { i -> (outBytes[(i / nw) * outStride + (i % nw)].toInt() and 0xFF) / 255f }
+    }
+
+    /** Bilinear resize of a row-major mask (pure Kotlin reference; slow at export sizes). */
     fun resize(src: FloatArray, w: Int, h: Int, nw: Int, nh: Int): FloatArray {
         if (w == nw && h == nh) return src.copyOf()
         val out = FloatArray(nw * nh)

@@ -149,11 +149,16 @@ class SegTestViewModel(app: Application) : AndroidViewModel(app) {
         return withContext(Dispatchers.Default) {
             val metrics = MaskAnalyzer.analyze(out.mask, segInput.width, segInput.height)
 
-            // v1 pipeline: upscale the small mask to the export photo, then clean its edges there.
+            // v1 pipeline: clean edges on the small mask (cheap), then scale both masks up to the export photo
+            // with the native bitmap scaler. Cleaning at full size took ~2.3 s per photo in the first run.
             val t = SystemClock.elapsedRealtime()
-            val rawMask = MaskOps.resize(out.mask, segInput.width, segInput.height, fw, fh)
-            val px = max(1, (max(fw, fh) / 1000f).roundToInt()) // ~2 px at 2048
-            val cleanMask = MaskOps.cleanEdges(rawMask, fw, fh, erodePx = px, featherPx = px)
+            val sw = segInput.width
+            val sh = segInput.height
+            // ~2 px at export size, expressed in segmentation pixels (1 px at 1024, 2 px at 1600).
+            val px = max(1, (2f * max(sw, sh) / max(fw, fh)).roundToInt())
+            val segClean = MaskOps.cleanEdges(out.mask, sw, sh, erodePx = px, featherPx = px)
+            val rawMask = MaskOps.resizeNative(out.mask, sw, sh, fw, fh)
+            val cleanMask = MaskOps.resizeNative(segClean, sw, sh, fw, fh)
             val cleanupMs = SystemClock.elapsedRealtime() - t
 
             val id = nextId++
