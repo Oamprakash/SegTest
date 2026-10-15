@@ -56,9 +56,16 @@ fun SegTestScreen(vm: SegTestViewModel = viewModel()) {
         ActivityResultContracts.PickMultipleVisualMedia(maxItems = 20)
     ) { uris -> vm.process(uris) }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Segmentation test · build ${BuildConfig.BUILD_ID}") }) }) { pad ->
+    Scaffold(topBar = { TopAppBar(title = { Text("Seg test") }) }) { pad ->
         LazyColumn(Modifier.fillMaxSize().padding(pad).padding(horizontal = 12.dp)) {
             item {
+                // Big and first, so it's obvious which build produced a session.
+                Text(
+                    "Build ${BuildConfig.BUILD_ID}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
                     Text("This harness needs Android 9+ (ImageDecoder).", color = MaterialTheme.colorScheme.error)
                 }

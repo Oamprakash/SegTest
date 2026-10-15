@@ -12,10 +12,11 @@ android {
         applicationId = "com.oam.segtest"
         minSdk = 28 // the harness decodes with ImageDecoder (Android 9+); ML Kit itself needs 24+
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1"
-        // Shown in the app and written to the CSV, so every result can be tied to the exact build.
+        // Shown in the app, in Settings > Apps > Seg Test (version), and in the CSV, so every result can be
+        // tied to the exact build.
         val sha = System.getenv("GITHUB_SHA")?.take(7) ?: "local"
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+        versionName = "0.1-$sha"
         buildConfigField("String", "BUILD_ID", "\"$sha\"")
     }
 
