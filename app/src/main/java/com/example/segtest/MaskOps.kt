@@ -113,3 +113,49 @@ object MaskOps {
         return out
     }
 }
+
+/**
+ * Applies a small mask to a full-size photo with native drawing (Skia scales and blends in one pass), so no
+ * per-pixel Kotlin runs at export size. This is how the real app should composite.
+ */
+object NativeCompose {
+
+    /** Packs a 0..1 mask into an ALPHA_8 bitmap at the mask's own (small) size. */
+    fun maskBitmap(mask: FloatArray, w: Int, h: Int): android.graphics.Bitmap {
+        val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ALPHA_8)
+        val stride = bmp.rowBytes
+        val bytes = ByteArray(stride * h)
+        var i = 0
+        for (y in 0 until h) {
+            var o = y * stride
+            for (x in 0 until w) {
+                var v = mask[i++]
+                if (v < 0f) v = 0f else if (v > 1f) v = 1f
+                bytes[o++] = (v * 255f + 0.5f).toInt().toByte()
+            }
+        }
+        bmp.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(bytes))
+        return bmp
+    }
+
+    /** Full-size transparent cutout: the photo, with the mask scaled up (filtered) as its alpha. */
+    fun cutout(full: android.graphics.Bitmap, maskA8: android.graphics.Bitmap): android.graphics.Bitmap {
+        val out = android.graphics.Bitmap.createBitmap(full.width, full.height, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(out)
+        canvas.drawBitmap(full, 0f, 0f, null)
+        val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG).apply {
+            xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN)
+        }
+        canvas.drawBitmap(maskA8, null, android.graphics.Rect(0, 0, full.width, full.height), paint)
+        return out
+    }
+
+    /** The cutout placed on a flat colour. */
+    fun onColor(cutout: android.graphics.Bitmap, color: Int): android.graphics.Bitmap {
+        val out = android.graphics.Bitmap.createBitmap(cutout.width, cutout.height, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(out)
+        canvas.drawColor(color)
+        canvas.drawBitmap(cutout, 0f, 0f, null)
+        return out
+    }
+}

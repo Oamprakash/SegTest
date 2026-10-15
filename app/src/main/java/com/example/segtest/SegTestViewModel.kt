@@ -149,32 +149,35 @@ class SegTestViewModel(app: Application) : AndroidViewModel(app) {
         return withContext(Dispatchers.Default) {
             val metrics = MaskAnalyzer.analyze(out.mask, segInput.width, segInput.height)
 
-            // v1 pipeline: clean edges on the small mask (cheap), then scale both masks up to the export photo
-            // with the native bitmap scaler. Cleaning at full size took ~2.3 s per photo in the first run.
-            val t = SystemClock.elapsedRealtime()
+            // v1 pipeline, timed end to end: clean the small mask, then let native drawing scale it up and apply
+            // it to the full photo. No per-pixel Kotlin runs at export size (that cost ~2 s per photo before).
             val sw = segInput.width
             val sh = segInput.height
             // ~2 px at export size, expressed in segmentation pixels (1 px at 1024, 2 px at 1600).
             val px = max(1, (2f * max(sw, sh) / max(fw, fh)).roundToInt())
+            val t = SystemClock.elapsedRealtime()
             val segClean = MaskOps.cleanEdges(out.mask, sw, sh, erodePx = px, featherPx = px)
-            val rawMask = MaskOps.resizeNative(out.mask, sw, sh, fw, fh)
-            val cleanMask = MaskOps.resizeNative(segClean, sw, sh, fw, fh)
+            val cutClean = NativeCompose.cutout(full, NativeCompose.maskBitmap(segClean, sw, sh))
             val cleanupMs = SystemClock.elapsedRealtime() - t
+
+            // Raw version for comparison only (not timed).
+            val cutRaw = NativeCompose.cutout(full, NativeCompose.maskBitmap(out.mask, sw, sh))
 
             val id = nextId++
             val stem = "%03d_%s".format(Locale.US, id, category.name.lowercase())
             val darkBg = Color.rgb(24, 24, 28)
 
-            val dark = Compositor.onColor(full, rawMask, darkBg)
-            val darkClean = Compositor.onColor(full, cleanMask, darkBg)
-            val white = Compositor.onColor(full, rawMask, Color.WHITE)
-            val whiteClean = Compositor.onColor(full, cleanMask, Color.WHITE)
-            val edges = Compositor.uncertainty(full, rawMask)
+            val dark = NativeCompose.onColor(cutRaw, darkBg)
+            val darkClean = NativeCompose.onColor(cutClean, darkBg)
+            val white = NativeCompose.onColor(cutRaw, Color.WHITE)
+            val whiteClean = NativeCompose.onColor(cutClean, Color.WHITE)
+            // Edge map is a diagnostic preview; build it at segmentation size.
+            val edges = Compositor.uncertainty(segInput, out.mask)
 
             withContext(Dispatchers.IO) {
                 save(full, "${stem}_original.jpg")
-                save(Compositor.cutout(full, rawMask), "${stem}_cutout_raw.png")
-                save(Compositor.cutout(full, cleanMask), "${stem}_cutout_clean.png")
+                save(cutRaw, "${stem}_cutout_raw.png")
+                save(cutClean, "${stem}_cutout_clean.png")
                 save(dark, "${stem}_on_dark_raw.jpg")
                 save(darkClean, "${stem}_on_dark_clean.jpg")
                 save(edges, "${stem}_edges.jpg")
@@ -219,7 +222,7 @@ class SegTestViewModel(app: Application) : AndroidViewModel(app) {
         val s = _state.value
         viewModelScope.launch(Dispatchers.IO) {
             val header = "file,category,long_edge,width,height,latency_ms,cold_start_ms,subjects,subject_box_shares," +
-                "fg_fraction,soft_edge_ratio,fragments,largest_share,hole_fraction,touches_border,auto_flags,rating,input_info,export_w,export_h,cleanup_ms,cleanup_verdict,build"
+                "fg_fraction,soft_edge_ratio,fragments,largest_share,hole_fraction,touches_border,auto_flags,rating,input_info,export_w,export_h,cutout_ms,cleanup_verdict,build"
             val rows = s.items.sortedBy { it.id }.map { i ->
                 val m = i.metrics
                 listOf(
