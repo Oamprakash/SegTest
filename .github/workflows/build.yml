@@ -22,13 +22,13 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+      - name: Build release APK (debug-signed, not debuggable)
+        run: gradle assembleRelease --stacktrace
 
       - uses: actions/upload-artifact@v4
         with:
-          name: segtest-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: segtest-apk
+          path: app/build/outputs/apk/release/app-release.apk
 
       # Re-publish a "latest" pre-release so the APK can be downloaded straight to a phone.
       - name: Publish latest release
@@ -37,7 +37,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest app/build/outputs/apk/debug/app-debug.apk \
+          cp app/build/outputs/apk/release/app-release.apk "segtest-${GITHUB_SHA::7}.apk"
+          gh release create latest "segtest-${GITHUB_SHA::7}.apk" \
             --title "Latest build" \
-            --notes "Debug build of ${GITHUB_SHA::7}. Uninstall the previous build first: each CI build is signed with a fresh debug key." \
+            --notes "Build ${GITHUB_SHA::7} (shown at the top of the app). Uninstall the previous build first: each CI build is signed with a fresh debug key." \
             --prerelease

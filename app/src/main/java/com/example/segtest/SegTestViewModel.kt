@@ -219,7 +219,7 @@ class SegTestViewModel(app: Application) : AndroidViewModel(app) {
         val s = _state.value
         viewModelScope.launch(Dispatchers.IO) {
             val header = "file,category,long_edge,width,height,latency_ms,cold_start_ms,subjects,subject_box_shares," +
-                "fg_fraction,soft_edge_ratio,fragments,largest_share,hole_fraction,touches_border,auto_flags,rating,input_info,export_w,export_h,cleanup_ms,cleanup_verdict"
+                "fg_fraction,soft_edge_ratio,fragments,largest_share,hole_fraction,touches_border,auto_flags,rating,input_info,export_w,export_h,cleanup_ms,cleanup_verdict,build"
             val rows = s.items.sortedBy { it.id }.map { i ->
                 val m = i.metrics
                 listOf(
@@ -228,7 +228,7 @@ class SegTestViewModel(app: Application) : AndroidViewModel(app) {
                     fmt(m.fgFraction, 4), fmt(m.softEdgeRatio, 4), m.fragments,
                     fmt(m.largestShare, 3), fmt(m.holeFraction, 4), m.touchesBorder,
                     m.flags.joinToString("|"), i.rating.name, "\"${i.inputInfo}\"",
-                    i.exportWidth, i.exportHeight, i.cleanupMs, i.cleanupVerdict.name,
+                    i.exportWidth, i.exportHeight, i.cleanupMs, i.cleanupVerdict.name, BuildConfig.BUILD_ID,
                 ).joinToString(",")
             }
             File(sessionDir, "results.csv").writeText((listOf(header) + rows).joinToString("\n"))

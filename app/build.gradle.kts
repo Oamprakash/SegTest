@@ -14,9 +14,24 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1"
+        // Shown in the app and written to the CSV, so every result can be tied to the exact build.
+        val sha = System.getenv("GITHUB_SHA")?.take(7) ?: "local"
+        buildConfigField("String", "BUILD_ID", "\"$sha\"")
     }
 
-    buildFeatures { compose = true }
+    buildTypes {
+        // Non-debuggable build for realistic timings (debug builds run Kotlin loops much slower).
+        // Signed with the debug key so it installs without a keystore setup.
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

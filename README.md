@@ -6,7 +6,7 @@ A standalone app ("Seg Test"). Every push to `main` is built by GitHub Actions a
 
 ## 1. Install
 
-**Easiest:** open this repo's **Releases → Latest build** on your phone and install `app-debug.apk`. Each build is signed with a fresh debug key, so uninstall the previous Seg Test before installing a new one.
+**Easiest:** open this repo's **Releases → Latest build** on your phone and install the `segtest-<build>.apk` file. The build ID in the file name also shows at the top of the app and in `results.csv`, so you can always tell which build produced a result. Each build is signed with a fresh debug key, so uninstall the previous Seg Test before installing a new one.
 
 **Or build it yourself:** open the folder in Android Studio and run the `app` configuration. There's no Gradle wrapper checked in, so let Android Studio use its bundled Gradle (8.11+), or run `gradle wrapper` once.
 

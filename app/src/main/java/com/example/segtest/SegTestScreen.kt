@@ -56,7 +56,7 @@ fun SegTestScreen(vm: SegTestViewModel = viewModel()) {
         ActivityResultContracts.PickMultipleVisualMedia(maxItems = 20)
     ) { uris -> vm.process(uris) }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Segmentation test") }) }) { pad ->
+    Scaffold(topBar = { TopAppBar(title = { Text("Segmentation test · build ${BuildConfig.BUILD_ID}") }) }) { pad ->
         LazyColumn(Modifier.fillMaxSize().padding(pad).padding(horizontal = 12.dp)) {
             item {
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
