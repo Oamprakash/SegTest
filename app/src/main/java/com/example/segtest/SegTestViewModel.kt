@@ -34,12 +34,17 @@ enum class ShotCategory(val label: String) {
 enum class Rating { NONE, PASS, FIXABLE, FAIL }
 
 enum class Preview(val label: String) {
-    DARK_CLEAN("Cleaned · dark"), DARK("Raw · dark"), WHITE_CLEAN("Cleaned · white"), WHITE("Raw · white"),
+    FINAL("Final · white"), DARK_CLEAN("Cleaned · dark"), DARK("Raw · dark"), WHITE_CLEAN("Cleaned · white"), WHITE("Raw · white"),
     UNCERTAIN("Edges"), ORIGINAL("Original"),
 }
 
 /** Is the edge-cleaned cutout better than the raw one? */
 enum class CleanupVerdict { NONE, BETTER, SAME, WORSE }
+
+/** Auto-brighten vs the un-brightened cleaned cutout. CHANGED_ITEM = it no longer looks like the real item. */
+enum class BrightenVerdict(val label: String) {
+    NONE("-"), BETTER("better"), SAME("same"), WORSE("worse"), CHANGED_ITEM("changed the item")
+}
 
 /** Every run exports at this size, whatever size ML Kit segments at: that's the v1 pipeline. */
 const val EXPORT_LONG_EDGE = 2048
@@ -63,6 +68,9 @@ data class SegItem(
     val previews: Map<Preview, Bitmap>,
     val rating: Rating = Rating.NONE,
     val cleanupVerdict: CleanupVerdict = CleanupVerdict.NONE,
+    val light: LightFix,
+    val brightenMs: Long,
+    val brightenVerdict: BrightenVerdict = BrightenVerdict.NONE,
 )
 
 data class SegTestState(
@@ -98,6 +106,11 @@ class SegTestViewModel(app: Application) : AndroidViewModel(app) {
 
     fun judgeCleanup(id: Int, v: CleanupVerdict) {
         _state.update { s -> s.copy(items = s.items.map { if (it.id == id) it.copy(cleanupVerdict = v) else it }) }
+        writeCsv()
+    }
+
+    fun judgeBrighten(id: Int, v: BrightenVerdict) {
+        _state.update { s -> s.copy(items = s.items.map { if (it.id == id) it.copy(brightenVerdict = v) else it }) }
         writeCsv()
     }
 
@@ -160,6 +173,12 @@ class SegTestViewModel(app: Application) : AndroidViewModel(app) {
             val cutClean = NativeCompose.cutout(full, NativeCompose.maskBitmap(segClean, sw, sh))
             val cleanupMs = SystemClock.elapsedRealtime() - t
 
+            // Auto-brighten, timed separately: measured on the small image, applied natively to the cutout.
+            val t2 = SystemClock.elapsedRealtime()
+            val light = AutoLight.analyze(segInput, segClean)
+            val finalImg = NativeCompose.onColor(AutoLight.apply(cutClean, light), Color.WHITE)
+            val brightenMs = SystemClock.elapsedRealtime() - t2
+
             // Raw version for comparison only (not timed).
             val cutRaw = NativeCompose.cutout(full, NativeCompose.maskBitmap(out.mask, sw, sh))
 
@@ -176,6 +195,7 @@ class SegTestViewModel(app: Application) : AndroidViewModel(app) {
 
             withContext(Dispatchers.IO) {
                 save(full, "${stem}_original.jpg")
+                save(finalImg, "${stem}_final_white.jpg")
                 save(cutRaw, "${stem}_cutout_raw.png")
                 save(cutClean, "${stem}_cutout_clean.png")
                 save(dark, "${stem}_on_dark_raw.jpg")
@@ -198,7 +218,10 @@ class SegTestViewModel(app: Application) : AndroidViewModel(app) {
                 exportWidth = fw,
                 exportHeight = fh,
                 cleanupMs = cleanupMs,
+                light = light,
+                brightenMs = brightenMs,
                 previews = mapOf(
+                    Preview.FINAL to Compositor.scaledForDisplay(finalImg),
                     Preview.DARK_CLEAN to Compositor.scaledForDisplay(darkClean),
                     Preview.DARK to Compositor.scaledForDisplay(dark),
                     Preview.WHITE_CLEAN to Compositor.scaledForDisplay(whiteClean),
@@ -222,7 +245,7 @@ class SegTestViewModel(app: Application) : AndroidViewModel(app) {
         val s = _state.value
         viewModelScope.launch(Dispatchers.IO) {
             val header = "file,category,long_edge,width,height,latency_ms,cold_start_ms,subjects,subject_box_shares," +
-                "fg_fraction,soft_edge_ratio,fragments,largest_share,hole_fraction,touches_border,auto_flags,rating,input_info,export_w,export_h,cutout_ms,cleanup_verdict,build"
+                "fg_fraction,soft_edge_ratio,fragments,largest_share,hole_fraction,touches_border,auto_flags,rating,input_info,export_w,export_h,cutout_ms,cleanup_verdict,exposure,scene_gain,item_gain,gain_r,gain_g,gain_b,wb_applied,neutral_share,brighten_ms,brighten_verdict,build"
             val rows = s.items.sortedBy { it.id }.map { i ->
                 val m = i.metrics
                 listOf(
@@ -231,7 +254,11 @@ class SegTestViewModel(app: Application) : AndroidViewModel(app) {
                     fmt(m.fgFraction, 4), fmt(m.softEdgeRatio, 4), m.fragments,
                     fmt(m.largestShare, 3), fmt(m.holeFraction, 4), m.touchesBorder,
                     m.flags.joinToString("|"), i.rating.name, "\"${i.inputInfo}\"",
-                    i.exportWidth, i.exportHeight, i.cleanupMs, i.cleanupVerdict.name, BuildConfig.BUILD_ID,
+                    i.exportWidth, i.exportHeight, i.cleanupMs, i.cleanupVerdict.name,
+                    fmt(i.light.exposure, 3), fmt(i.light.sceneGain, 3), fmt(i.light.itemGain, 3),
+                    fmt(i.light.gainR, 3), fmt(i.light.gainG, 3), fmt(i.light.gainB, 3),
+                    i.light.wbApplied, fmt(i.light.neutralShare, 3), i.brightenMs, i.brightenVerdict.name,
+                    BuildConfig.BUILD_ID,
                 ).joinToString(",")
             }
             File(sessionDir, "results.csv").writeText((listOf(header) + rows).joinToString("\n"))

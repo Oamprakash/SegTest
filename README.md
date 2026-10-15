@@ -35,13 +35,15 @@ Run the set at **1024 px**, then again at **1600 px**. First results showed 2048
 
 ## 3. Rate and read the results
 
-Rate the **cleaned** cutout against one question: **would I post this as-is?**
+Rate the **final** image (cleaned cutout, auto-brightened, on white) against one question: **would I post this as-is?**
 
 - **Pass**: post it.
 - **Fixable**: a 5-second touch-up (brush a small missed bit) would make it postable.
 - **Fail**: needs real work or a reshoot.
 
 Then compare the Cleaned and Raw previews and mark the edge cleanup **better / same / worse**. "Cleaned · dark" is the default preview because dark backgrounds make white-on-white misses obvious. "Edges" paints uncertain pixels magenta.
+
+**Auto-brighten** fixes lighting only. Exposure comes from the whole photo (a white wall or sheet already near white means the photo isn't underexposed, so a black item stays black), never exceeds what the item's own highlights allow, and is capped at 1.6×. Colour-cast correction runs only when the item has enough neutral areas to judge the light from, and moves each channel at most ±15%. Compare "Final · white" with "Cleaned · white" and mark it better / same / worse, or **changed the item** if it no longer looks like the real thing; that last one is the verdict that matters most.
 
 Auto-flags are hints, not verdicts:
 

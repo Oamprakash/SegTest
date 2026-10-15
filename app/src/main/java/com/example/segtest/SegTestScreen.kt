@@ -84,7 +84,7 @@ fun SegTestScreen(vm: SegTestViewModel = viewModel()) {
                 s.sessionDir?.let { Text("Saved to: $it", style = MaterialTheme.typography.bodySmall) }
                 if (s.items.isNotEmpty()) Summary(s.items)
             }
-            items(s.items, key = { it.id }) { ResultCard(it, vm::rate, vm::judgeCleanup) }
+            items(s.items, key = { it.id }) { ResultCard(it, vm::rate, vm::judgeCleanup, vm::judgeBrighten) }
         }
     }
 }
@@ -125,8 +125,13 @@ private fun Summary(items: List<SegItem>) {
 }
 
 @Composable
-private fun ResultCard(item: SegItem, onRate: (Int, Rating) -> Unit, onCleanup: (Int, CleanupVerdict) -> Unit) {
-    var preview by remember { mutableStateOf(Preview.DARK_CLEAN) }
+private fun ResultCard(
+    item: SegItem,
+    onRate: (Int, Rating) -> Unit,
+    onCleanup: (Int, CleanupVerdict) -> Unit,
+    onBrighten: (Int, BrightenVerdict) -> Unit,
+) {
+    var preview by remember { mutableStateOf(Preview.FINAL) }
     val m = item.metrics
     Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Column(Modifier.padding(12.dp)) {
@@ -156,10 +161,22 @@ private fun ResultCard(item: SegItem, onRate: (Int, Rating) -> Unit, onCleanup: 
             if (m.flags.isNotEmpty()) {
                 Text("Auto-flags: ${m.flags.joinToString()}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
-            Text("Cleaned cutout: would you post it as-is?", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
+            Text("Final image: would you post it as-is?", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
             ChipRow(listOf(Rating.PASS, Rating.FIXABLE, Rating.FAIL), item.rating, { it.name.lowercase() }) { onRate(item.id, it) }
             Text("Edge cleanup vs raw (compare the Cleaned and Raw previews)", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
             ChipRow(listOf(CleanupVerdict.BETTER, CleanupVerdict.SAME, CleanupVerdict.WORSE), item.cleanupVerdict, { it.name.lowercase() }) { onCleanup(item.id, it) }
+            val l = item.light
+            Text(
+                "Brighten ×${"%.2f".format(l.exposure)} (photo asked ×${"%.2f".format(l.sceneGain)}, item allowed ×${"%.2f".format(l.itemGain)}) · " +
+                    "colour fix ${if (l.wbApplied) "on" else "off"} · +${item.brightenMs} ms",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            Text("Brightening (compare Final · white with Cleaned · white)", style = MaterialTheme.typography.labelMedium)
+            ChipRow(
+                listOf(BrightenVerdict.BETTER, BrightenVerdict.SAME, BrightenVerdict.WORSE, BrightenVerdict.CHANGED_ITEM),
+                item.brightenVerdict, { it.label },
+            ) { onBrighten(item.id, it) }
         }
     }
 }
