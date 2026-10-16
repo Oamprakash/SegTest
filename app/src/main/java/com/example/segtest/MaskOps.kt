@@ -146,27 +146,36 @@ object NativeCompose {
      *
      * An ALPHA_8 bitmap is drawn as COVERAGE, not as source alpha, so the earlier DST_IN draw left the photo
      * untouched (build 22c6414 exported fully opaque "cutouts"). Here the mask is drawn with the photo as the
-     * paint's shader onto a transparent canvas: coverage then becomes the photo's alpha. The result is checked
-     * on a few pixels where the mask is clearly in or out; if the device draws it differently, an explicit
-     * Kotlin path takes over.
+     * paint's shader onto a transparent canvas: coverage then becomes the photo's alpha.
+     *
+     * The mask is scaled to full size FIRST and drawn unscaled. Build ff47abf drew the small mask into a larger
+     * rect, and Skia applied that same scale to the shader, so the photo was magnified 2x inside a correct
+     * outline (the shirt's shape filled with bedspread). The result is checked for both alpha AND colour on
+     * pixels clearly in or out of the mask; if anything is off, an explicit Kotlin path takes over.
      */
     fun cutout(full: android.graphics.Bitmap, mask: FloatArray, sw: Int, sh: Int): Pair<android.graphics.Bitmap, Path> {
         val fw = full.width
         val fh = full.height
-        val maskA8 = maskBitmap(mask, sw, sh)
+        val small = maskBitmap(mask, sw, sh)
+        val maskA8 = android.graphics.Bitmap.createScaledBitmap(small, fw, fh, true)
+        small.recycle()
         val out = android.graphics.Bitmap.createBitmap(fw, fh, android.graphics.Bitmap.Config.ARGB_8888)
-        val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG or android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        val paint = android.graphics.Paint().apply {
             shader = android.graphics.BitmapShader(full, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP)
         }
-        android.graphics.Canvas(out).drawBitmap(maskA8, null, android.graphics.Rect(0, 0, fw, fh), paint)
+        // Same size, no scaling: the shader and the mask share one coordinate space.
+        android.graphics.Canvas(out).drawBitmap(maskA8, 0f, 0f, paint)
         maskA8.recycle()
-        if (alphaFollowsMask(out, mask, sw, sh)) return out to Path.SHADER
+        if (followsMask(out, full, mask, sw, sh)) return out to Path.SHADER
         out.recycle()
         return kotlinCutout(full, mask, sw, sh) to Path.KOTLIN
     }
 
-    /** True when the output is transparent where the mask is clearly out and opaque where it is clearly in. */
-    private fun alphaFollowsMask(out: android.graphics.Bitmap, mask: FloatArray, sw: Int, sh: Int): Boolean {
+    /**
+     * True when the output is transparent where the mask is clearly out, and opaque AND the same colour as the
+     * photo where it is clearly in.
+     */
+    private fun followsMask(out: android.graphics.Bitmap, full: android.graphics.Bitmap, mask: FloatArray, sw: Int, sh: Int): Boolean {
         var inChecked = 0
         var outChecked = 0
         val step = kotlin.math.max(1, kotlin.math.min(sw, sh) / 24)
@@ -180,8 +189,16 @@ object NativeCompose {
                 if ((clearlyIn && inChecked < 5) || (clearlyOut && outChecked < 5)) {
                     val fx = ((x + 0.5f) * out.width / sw).toInt().coerceIn(0, out.width - 1)
                     val fy = ((y + 0.5f) * out.height / sh).toInt().coerceIn(0, out.height - 1)
-                    val a = out.getPixel(fx, fy) ushr 24
-                    if (clearlyIn) { if (a < 230) return false; inChecked++ }
+                    val c = out.getPixel(fx, fy)
+                    val a = c ushr 24
+                    if (clearlyIn) {
+                        if (a < 230) return false
+                        val p = full.getPixel(fx, fy)
+                        for (sh8 in intArrayOf(16, 8, 0)) {
+                            if (kotlin.math.abs(((c shr sh8) and 0xFF) - ((p shr sh8) and 0xFF)) > 6) return false
+                        }
+                        inChecked++
+                    }
                     else { if (a > 25) return false; outChecked++ }
                 }
                 x += step
