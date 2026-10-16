@@ -41,6 +41,15 @@ jobs:
           disable-animations: true
           script: gradle connectedDebugAndroidTest --stacktrace
 
+      - name: Report emulator test counts
+        run: |
+          f=$(ls app/build/outputs/androidTest-results/connected/debug/*.xml 2>/dev/null | head -1)
+          if [ -z "$f" ]; then echo "::error::No emulator test results found"; exit 1; fi
+          t=$(grep -o 'tests="[0-9]*"' "$f" | head -1 | tr -dc 0-9)
+          fl=$(grep -o 'failures="[0-9]*"' "$f" | head -1 | tr -dc 0-9)
+          echo "::notice title=Emulator tests::$t tests, $fl failures"
+          [ "$t" -gt 0 ] && [ "$fl" -eq 0 ]
+
       - uses: actions/upload-artifact@v4
         with:
           name: segtest-apk
