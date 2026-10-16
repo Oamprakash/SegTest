@@ -48,11 +48,8 @@ jobs:
         run: |
           files=$(find . -path '*build/outputs/androidTest-results/connected*' -name '*.xml')
           if [ -z "$files" ]; then echo "::error::No emulator test results found"; exit 1; fi
-          t=0; fl=0
-          for f in $files; do
-            t=$((t + $(grep -o 'tests="[0-9]*"' "$f" | head -1 | tr -dc 0-9)))
-            fl=$((fl + $(grep -o 'failures="[0-9]*"' "$f" | head -1 | tr -dc 0-9)))
-          done
+          t=$(cat $files | grep -o '<testcase' | wc -l)
+          fl=$(cat $files | grep -o '<failure' | wc -l)
           u=$(find core -path '*build/test-results/testDebugUnitTest*' -name '*.xml' -exec cat {} + | grep -c '<testcase')
           echo "::notice title=Tests::emulator $t tests, $fl failures; JVM ${u:-0} tests"
           [ "$t" -gt 0 ] && [ "$fl" -eq 0 ]
