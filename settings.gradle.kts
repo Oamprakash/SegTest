@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "segtest"
 include(":app")
+include(":core:imaging")

@@ -22,6 +22,9 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
+      - name: Imaging unit tests (JVM)
+        run: gradle :core:imaging:testDebugUnitTest --stacktrace
+
       - name: Build release APK (debug-signed, not debuggable)
         run: gradle assembleRelease --stacktrace
 
@@ -43,11 +46,15 @@ jobs:
 
       - name: Report emulator test counts
         run: |
-          f=$(ls app/build/outputs/androidTest-results/connected/debug/*.xml 2>/dev/null | head -1)
-          if [ -z "$f" ]; then echo "::error::No emulator test results found"; exit 1; fi
-          t=$(grep -o 'tests="[0-9]*"' "$f" | head -1 | tr -dc 0-9)
-          fl=$(grep -o 'failures="[0-9]*"' "$f" | head -1 | tr -dc 0-9)
-          echo "::notice title=Emulator tests::$t tests, $fl failures"
+          files=$(find . -path '*build/outputs/androidTest-results/connected*' -name '*.xml')
+          if [ -z "$files" ]; then echo "::error::No emulator test results found"; exit 1; fi
+          t=0; fl=0
+          for f in $files; do
+            t=$((t + $(grep -o 'tests="[0-9]*"' "$f" | head -1 | tr -dc 0-9)))
+            fl=$((fl + $(grep -o 'failures="[0-9]*"' "$f" | head -1 | tr -dc 0-9)))
+          done
+          u=$(find core -path '*build/test-results/testDebugUnitTest*' -name '*.xml' -exec cat {} + | grep -c '<testcase')
+          echo "::notice title=Tests::emulator $t tests, $fl failures; JVM ${u:-0} tests"
           [ "$t" -gt 0 ] && [ "$fl" -eq 0 ]
 
       - uses: actions/upload-artifact@v4
