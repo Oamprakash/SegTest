@@ -137,7 +137,7 @@ private fun ResultCard(
         Column(Modifier.padding(12.dp)) {
             Text(
                 "${item.fileStem} · seg ${item.width}×${item.height} ${item.latencyMs} ms · " +
-                    "cutout ${item.exportWidth}×${item.exportHeight} +${item.cleanupMs} ms",
+                    "cutout ${item.exportWidth}×${item.exportHeight} +${item.cleanupMs} ms (${item.compositePath.lowercase()})",
                 style = MaterialTheme.typography.titleSmall,
             )
             ChipRow(Preview.entries, preview, { it.label }) { preview = it }

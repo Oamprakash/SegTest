@@ -138,16 +138,86 @@ object NativeCompose {
         return bmp
     }
 
-    /** Full-size transparent cutout: the photo, with the mask scaled up (filtered) as its alpha. */
-    fun cutout(full: android.graphics.Bitmap, maskA8: android.graphics.Bitmap): android.graphics.Bitmap {
-        val out = android.graphics.Bitmap.createBitmap(full.width, full.height, android.graphics.Bitmap.Config.ARGB_8888)
-        val canvas = android.graphics.Canvas(out)
-        canvas.drawBitmap(full, 0f, 0f, null)
-        val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG).apply {
-            xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN)
+    /** Which compositing path produced a cutout, for the CSV. */
+    enum class Path { SHADER, KOTLIN }
+
+    /**
+     * Full-size transparent cutout: the photo, with the small mask scaled up (filtered) as its alpha.
+     *
+     * An ALPHA_8 bitmap is drawn as COVERAGE, not as source alpha, so the earlier DST_IN draw left the photo
+     * untouched (build 22c6414 exported fully opaque "cutouts"). Here the mask is drawn with the photo as the
+     * paint's shader onto a transparent canvas: coverage then becomes the photo's alpha. The result is checked
+     * on a few pixels where the mask is clearly in or out; if the device draws it differently, an explicit
+     * Kotlin path takes over.
+     */
+    fun cutout(full: android.graphics.Bitmap, mask: FloatArray, sw: Int, sh: Int): Pair<android.graphics.Bitmap, Path> {
+        val fw = full.width
+        val fh = full.height
+        val maskA8 = maskBitmap(mask, sw, sh)
+        val out = android.graphics.Bitmap.createBitmap(fw, fh, android.graphics.Bitmap.Config.ARGB_8888)
+        val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG or android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            shader = android.graphics.BitmapShader(full, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP)
         }
-        canvas.drawBitmap(maskA8, null, android.graphics.Rect(0, 0, full.width, full.height), paint)
-        return out
+        android.graphics.Canvas(out).drawBitmap(maskA8, null, android.graphics.Rect(0, 0, fw, fh), paint)
+        maskA8.recycle()
+        if (alphaFollowsMask(out, mask, sw, sh)) return out to Path.SHADER
+        out.recycle()
+        return kotlinCutout(full, mask, sw, sh) to Path.KOTLIN
+    }
+
+    /** True when the output is transparent where the mask is clearly out and opaque where it is clearly in. */
+    private fun alphaFollowsMask(out: android.graphics.Bitmap, mask: FloatArray, sw: Int, sh: Int): Boolean {
+        var inChecked = 0
+        var outChecked = 0
+        val step = kotlin.math.max(1, kotlin.math.min(sw, sh) / 24)
+        var y = 2
+        while (y < sh - 2 && (inChecked < 5 || outChecked < 5)) {
+            var x = 2
+            while (x < sw - 2) {
+                val v = mask[y * sw + x]
+                val clearlyIn = v > 0.98f && neighbours(mask, sw, x, y) { it > 0.98f }
+                val clearlyOut = v < 0.02f && neighbours(mask, sw, x, y) { it < 0.02f }
+                if ((clearlyIn && inChecked < 5) || (clearlyOut && outChecked < 5)) {
+                    val fx = ((x + 0.5f) * out.width / sw).toInt().coerceIn(0, out.width - 1)
+                    val fy = ((y + 0.5f) * out.height / sh).toInt().coerceIn(0, out.height - 1)
+                    val a = out.getPixel(fx, fy) ushr 24
+                    if (clearlyIn) { if (a < 230) return false; inChecked++ }
+                    else { if (a > 25) return false; outChecked++ }
+                }
+                x += step
+            }
+            y += step
+        }
+        return inChecked > 0 && outChecked > 0
+    }
+
+    private inline fun neighbours(m: FloatArray, w: Int, x: Int, y: Int, ok: (Float) -> Boolean): Boolean {
+        for (dy in -2..2) for (dx in -2..2) if (!ok(m[(y + dy) * w + x + dx])) return false
+        return true
+    }
+
+    /** Fallback: scale the mask natively (proven to work in build dbc5477), then copy it into the alpha channel. */
+    private fun kotlinCutout(full: android.graphics.Bitmap, mask: FloatArray, sw: Int, sh: Int): android.graphics.Bitmap {
+        val fw = full.width
+        val fh = full.height
+        val small = maskBitmap(mask, sw, sh)
+        val big = android.graphics.Bitmap.createScaledBitmap(small, fw, fh, true)
+        small.recycle()
+        val stride = big.rowBytes
+        val a = ByteArray(stride * fh)
+        big.copyPixelsToBuffer(java.nio.ByteBuffer.wrap(a))
+        big.recycle()
+        val px = IntArray(fw * fh)
+        full.getPixels(px, 0, fw, 0, 0, fw, fh)
+        var i = 0
+        for (y in 0 until fh) {
+            var o = y * stride
+            for (x in 0 until fw) {
+                px[i] = (px[i] and 0x00FFFFFF) or ((a[o++].toInt() and 0xFF) shl 24)
+                i++
+            }
+        }
+        return android.graphics.Bitmap.createBitmap(px, fw, fh, android.graphics.Bitmap.Config.ARGB_8888)
     }
 
     /** The cutout placed on a flat colour. */

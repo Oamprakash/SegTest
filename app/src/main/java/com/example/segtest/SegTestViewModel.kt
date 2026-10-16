@@ -65,6 +65,10 @@ data class SegItem(
     val exportHeight: Int,
     /** Mask upscale + edge cleanup time at export size, on top of [latencyMs]. */
     val cleanupMs: Long,
+    val cleanStepMs: Long,
+    val compositeMs: Long,
+    /** SHADER = native draw verified; KOTLIN = the device drew it wrong and the fallback ran. */
+    val compositePath: String,
     val previews: Map<Preview, Bitmap>,
     val rating: Rating = Rating.NONE,
     val cleanupVerdict: CleanupVerdict = CleanupVerdict.NONE,
@@ -170,8 +174,12 @@ class SegTestViewModel(app: Application) : AndroidViewModel(app) {
             val px = max(1, (2f * max(sw, sh) / max(fw, fh)).roundToInt())
             val t = SystemClock.elapsedRealtime()
             val segClean = MaskOps.cleanEdges(out.mask, sw, sh, erodePx = px, featherPx = px)
-            val cutClean = NativeCompose.cutout(full, NativeCompose.maskBitmap(segClean, sw, sh))
-            val cleanupMs = SystemClock.elapsedRealtime() - t
+            val tClean = SystemClock.elapsedRealtime()
+            val (cutClean, compositePath) = NativeCompose.cutout(full, segClean, sw, sh)
+            val tDone = SystemClock.elapsedRealtime()
+            val cleanupMs = tDone - t
+            val cleanStepMs = tClean - t
+            val compositeMs = tDone - tClean
 
             // Auto-brighten, timed separately: measured on the small image, applied natively to the cutout.
             val t2 = SystemClock.elapsedRealtime()
@@ -180,7 +188,7 @@ class SegTestViewModel(app: Application) : AndroidViewModel(app) {
             val brightenMs = SystemClock.elapsedRealtime() - t2
 
             // Raw version for comparison only (not timed).
-            val cutRaw = NativeCompose.cutout(full, NativeCompose.maskBitmap(out.mask, sw, sh))
+            val cutRaw = NativeCompose.cutout(full, out.mask, sw, sh).first
 
             val id = nextId++
             val stem = "%03d_%s".format(Locale.US, id, category.name.lowercase())
@@ -218,6 +226,9 @@ class SegTestViewModel(app: Application) : AndroidViewModel(app) {
                 exportWidth = fw,
                 exportHeight = fh,
                 cleanupMs = cleanupMs,
+                cleanStepMs = cleanStepMs,
+                compositeMs = compositeMs,
+                compositePath = compositePath.name,
                 light = light,
                 brightenMs = brightenMs,
                 previews = mapOf(
@@ -245,7 +256,7 @@ class SegTestViewModel(app: Application) : AndroidViewModel(app) {
         val s = _state.value
         viewModelScope.launch(Dispatchers.IO) {
             val header = "file,category,long_edge,width,height,latency_ms,cold_start_ms,subjects,subject_box_shares," +
-                "fg_fraction,soft_edge_ratio,fragments,largest_share,hole_fraction,touches_border,auto_flags,rating,input_info,export_w,export_h,cutout_ms,cleanup_verdict,exposure,scene_gain,item_gain,gain_r,gain_g,gain_b,wb_applied,neutral_share,brighten_ms,brighten_verdict,build"
+                "fg_fraction,soft_edge_ratio,fragments,largest_share,hole_fraction,touches_border,auto_flags,rating,input_info,export_w,export_h,cutout_ms,clean_ms,composite_ms,composite_path,cleanup_verdict,exposure,scene_gain,item_gain,gain_r,gain_g,gain_b,wb_applied,neutral_share,brighten_ms,brighten_verdict,build"
             val rows = s.items.sortedBy { it.id }.map { i ->
                 val m = i.metrics
                 listOf(
@@ -254,7 +265,7 @@ class SegTestViewModel(app: Application) : AndroidViewModel(app) {
                     fmt(m.fgFraction, 4), fmt(m.softEdgeRatio, 4), m.fragments,
                     fmt(m.largestShare, 3), fmt(m.holeFraction, 4), m.touchesBorder,
                     m.flags.joinToString("|"), i.rating.name, "\"${i.inputInfo}\"",
-                    i.exportWidth, i.exportHeight, i.cleanupMs, i.cleanupVerdict.name,
+                    i.exportWidth, i.exportHeight, i.cleanupMs, i.cleanStepMs, i.compositeMs, i.compositePath, i.cleanupVerdict.name,
                     fmt(i.light.exposure, 3), fmt(i.light.sceneGain, 3), fmt(i.light.itemGain, 3),
                     fmt(i.light.gainR, 3), fmt(i.light.gainG, 3), fmt(i.light.gainB, 3),
                     i.light.wbApplied, fmt(i.light.neutralShare, 3), i.brightenMs, i.brightenVerdict.name,
