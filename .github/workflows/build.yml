@@ -46,10 +46,11 @@ jobs:
 
       - name: Report emulator test counts
         run: |
-          files=$(find . -path '*build/outputs/androidTest-results/connected*' -name '*.xml')
-          if [ -z "$files" ]; then echo "::error::No emulator test results found"; exit 1; fi
-          t=$(cat $files | grep -o '<testcase' | wc -l)
-          fl=$(cat $files | grep -o '<failure' | wc -l)
+          # Result file names contain spaces (device names), so never word-split them.
+          res=$(find . -path '*build/outputs/androidTest-results/connected*' -name '*.xml' -exec cat {} +)
+          if [ -z "$res" ]; then echo "::error::No emulator test results found"; exit 1; fi
+          t=$(printf '%s' "$res" | grep -o '<testcase' | wc -l)
+          fl=$(printf '%s' "$res" | grep -o '<failure' | wc -l)
           u=$(find core -path '*build/test-results/testDebugUnitTest*' -name '*.xml' -exec cat {} + | grep -c '<testcase')
           echo "::notice title=Tests::emulator $t tests, $fl failures; JVM ${u:-0} tests"
           [ "$t" -gt 0 ] && [ "$fl" -eq 0 ]
